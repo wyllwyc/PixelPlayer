@@ -34,7 +34,8 @@ import com.theveloper.pixelplay.data.WearOutputTarget
 import com.theveloper.pixelplay.presentation.components.AlwaysOnScalingPositionIndicator
 import com.theveloper.pixelplay.presentation.components.WearTopTimeText
 import com.theveloper.pixelplay.presentation.theme.LocalWearPalette
-import com.theveloper.pixelplay.presentation.theme.radialBackgroundBrush
+import com.theveloper.pixelplay.presentation.theme.screenBackgroundColor
+import com.theveloper.pixelplay.presentation.theme.surfaceContainerColor
 import com.theveloper.pixelplay.presentation.viewmodel.WearPlayerViewModel
 
 @Composable
@@ -47,7 +48,7 @@ fun OutputScreen(
     val palette = LocalWearPalette.current
     val columnState = rememberResponsiveColumnState()
 
-    val background = palette.radialBackgroundBrush()
+    val background = palette.screenBackgroundColor()
 
     Box(
         modifier = Modifier
@@ -132,7 +133,7 @@ private fun OutputTargetChip(
     val containerColor = when {
         !enabled -> palette.controlDisabledContainer
         selected -> palette.controlContainer.copy(alpha = 0.95f)
-        else -> palette.chipContainer
+        else -> palette.surfaceContainerColor()
     }
     val contentColor = when {
         !enabled -> palette.controlDisabledContent

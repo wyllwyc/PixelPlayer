@@ -45,7 +45,9 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import com.theveloper.pixelplay.presentation.components.WearTopTimeText
 import com.theveloper.pixelplay.presentation.theme.LocalWearPalette
-import com.theveloper.pixelplay.presentation.theme.radialBackgroundBrush
+import com.theveloper.pixelplay.presentation.theme.screenBackgroundColor
+import com.theveloper.pixelplay.presentation.theme.surfaceContainerColor
+import com.theveloper.pixelplay.presentation.theme.surfaceContainerHighColor
 import com.theveloper.pixelplay.presentation.viewmodel.WearPlayerViewModel
 import kotlinx.coroutines.delay
 
@@ -74,7 +76,7 @@ fun VolumeScreen(
         animationSpec = spring(),
         label = "volumeProgress",
     )
-    val background = palette.radialBackgroundBrush()
+    val background = palette.screenBackgroundColor()
 
     Box(
         modifier = Modifier
@@ -136,7 +138,7 @@ private fun CurvedVolumeIndicator(
         animationSpec = spring(),
         label = "curvedVolumeIndicator",
     )
-    val trackColor = palette.chipContainer.copy(alpha = 0.50f)
+    val trackColor = palette.surfaceContainerColor().copy(alpha = 0.58f)
     val progressColor = palette.controlContainer
 
     Canvas(modifier = modifier) {
@@ -180,7 +182,7 @@ private fun VolumeValuePill(
     modifier: Modifier = Modifier,
 ) {
     val palette = LocalWearPalette.current
-    val container = palette.controlContainer.copy(alpha = 0.92f)
+    val container = palette.surfaceContainerHighColor()
     val icon = if (level <= 0) {
         Icons.AutoMirrored.Rounded.VolumeOff
     } else {
@@ -230,7 +232,7 @@ private fun VolumeStepButton(
 ) {
     val palette = LocalWearPalette.current
     val container by animateColorAsState(
-        targetValue = palette.chipContainer.copy(alpha = 0.92f),
+        targetValue = palette.surfaceContainerColor().copy(alpha = 0.98f),
         animationSpec = spring(),
         label = "volumeStepContainer",
     )

@@ -33,7 +33,8 @@ import com.theveloper.pixelplay.presentation.components.WearTopTimeText
 import com.theveloper.pixelplay.presentation.viewmodel.BrowseUiState
 import com.theveloper.pixelplay.presentation.viewmodel.WearBrowseViewModel
 import com.theveloper.pixelplay.presentation.theme.LocalWearPalette
-import com.theveloper.pixelplay.presentation.theme.radialBackgroundBrush
+import com.theveloper.pixelplay.presentation.theme.screenBackgroundColor
+import com.theveloper.pixelplay.presentation.theme.surfaceContainerColor
 import com.theveloper.pixelplay.shared.WearBrowseRequest
 import com.theveloper.pixelplay.shared.WearLibraryItem
 import androidx.compose.material.icons.Icons
@@ -61,7 +62,7 @@ fun LibraryListScreen(
         viewModel.loadItems(browseType)
     }
 
-    val background = palette.radialBackgroundBrush()
+    val background = palette.screenBackgroundColor()
 
     when (val state = uiState) {
         is BrowseUiState.Loading -> {
@@ -130,7 +131,7 @@ fun LibraryListScreen(
                             },
                             onClick = { viewModel.refresh() },
                             colors = ChipDefaults.chipColors(
-                                backgroundColor = palette.chipContainer,
+                                backgroundColor = palette.surfaceContainerColor(),
                                 contentColor = palette.chipContent,
                             ),
                             modifier = Modifier
@@ -279,7 +280,7 @@ private fun LibraryItemChip(
         },
         onClick = onClick,
         colors = ChipDefaults.chipColors(
-            backgroundColor = palette.chipContainer,
+            backgroundColor = palette.surfaceContainerColor(),
             contentColor = palette.chipContent,
         ),
         modifier = Modifier.fillMaxWidth(),

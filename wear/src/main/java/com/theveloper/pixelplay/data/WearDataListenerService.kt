@@ -134,7 +134,8 @@ class WearDataListenerService : WearableListenerService() {
     }
 
     private fun maybeAutoLaunchPlayer(playerState: WearPlayerState) {
-        val isNowPlaying = playerState.isPlaying && playerState.songId.isNotEmpty()
+        val playerIdentity = playerState.playerIdentity()
+        val isNowPlaying = playerState.isPlaying && playerIdentity.isNotEmpty()
         if (!isNowPlaying) {
             lastKnownPlaying = false
             return
@@ -145,7 +146,7 @@ class WearDataListenerService : WearableListenerService() {
         }
 
         val playbackJustStarted = !lastKnownPlaying
-        val songChangedWhilePlaying = playerState.songId != lastAutoLaunchSongId
+        val songChangedWhilePlaying = playerIdentity != lastAutoLaunchSongId
 
         val now = SystemClock.elapsedRealtime()
         val keepAliveExpired = now - lastAutoLaunchElapsedMs >= AUTO_LAUNCH_KEEP_ALIVE_MS
@@ -172,13 +173,20 @@ class WearDataListenerService : WearableListenerService() {
         runCatching {
             startActivity(intent)
             lastAutoLaunchElapsedMs = now
-            lastAutoLaunchSongId = playerState.songId
+            lastAutoLaunchSongId = playerIdentity
             lastKnownPlaying = true
             Timber.tag(TAG).d("Auto-opened Wear player for active phone playback")
         }.onFailure { e ->
             lastKnownPlaying = true
             Timber.tag(TAG).w(e, "Failed to auto-open Wear player")
         }
+    }
+
+    private fun WearPlayerState.playerIdentity(): String {
+        if (songId.isNotBlank()) return songId
+        val title = songTitle.trim()
+        if (title.isNotEmpty()) return "$title|${artistName.trim()}"
+        return ""
     }
 
     /**
@@ -234,7 +242,11 @@ class WearDataListenerService : WearableListenerService() {
                 try {
                     val requestJson = String(messageEvent.data, Charsets.UTF_8)
                     val request = json.decodeFromString<WearTransferRequest>(requestJson)
-                    transferRepository.requestTransfer(request.songId)
+                    transferRepository.requestTransfer(
+                        songId = request.songId,
+                        requestId = request.requestId,
+                        targetNodeId = messageEvent.sourceNodeId,
+                    )
                     Timber.tag(TAG).d("Received phone transfer request for songId=${request.songId}")
                 } catch (e: Exception) {
                     Timber.tag(TAG).e(e, "Failed to process transfer request")

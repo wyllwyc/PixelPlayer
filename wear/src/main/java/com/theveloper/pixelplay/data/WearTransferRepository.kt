@@ -1,6 +1,7 @@
 package com.theveloper.pixelplay.data
 
 import android.app.Application
+import android.os.SystemClock
 import android.webkit.MimeTypeMap
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.NodeClient
@@ -108,18 +109,28 @@ class WearTransferRepository @Inject constructor(
 
     /** Failsafe timeout per transfer to avoid hanging states at 0%. */
     private val transferWatchdogs = ConcurrentHashMap<String, Job>()
+    /** Request IDs currently receiving bytes through ChannelClient. */
+    private val activeChannelRequestIds = ConcurrentHashMap.newKeySet<String>()
 
     companion object {
         private const val TAG = "WearTransferRepo"
         private const val ARTWORK_FILE_EXTENSION = "jpg"
-        private const val TRANSFER_IDLE_TIMEOUT_MS = 20_000L
+        private const val TRANSFER_IDLE_TIMEOUT_MS = 120_000L
+        private const val METADATA_WAIT_TIMEOUT_MS = 8_000L
+        private const val METADATA_POLL_INTERVAL_MS = 120L
+        private const val WATCHDOG_TOUCH_INTERVAL_MS = 1_500L
+        private const val LOCAL_PROGRESS_UPDATE_INTERVAL_BYTES = 65_536L
     }
 
     /**
      * Request transfer of a song from the phone.
      * Sends a WearTransferRequest via MessageClient.
      */
-    fun requestTransfer(songId: String) {
+    fun requestTransfer(
+        songId: String,
+        requestId: String = UUID.randomUUID().toString(),
+        targetNodeId: String? = null,
+    ) {
         // Don't request if already transferring this song
         if (songToRequestId.containsKey(songId)) {
             Timber.tag(TAG).d("Transfer already in progress for songId=$songId")
@@ -127,7 +138,7 @@ class WearTransferRepository @Inject constructor(
         }
 
         scope.launch {
-            val requestId = UUID.randomUUID().toString()
+            clearStaleTransfersForSong(songId)
             songToRequestId[songId] = requestId
 
             _activeTransfers.update { map ->
@@ -146,18 +157,26 @@ class WearTransferRepository @Inject constructor(
                 val request = WearTransferRequest(requestId, songId)
                 val requestBytes = json.encodeToString(request).toByteArray(Charsets.UTF_8)
 
-                val nodes = nodeClient.connectedNodes.await()
-                if (nodes.isEmpty()) {
-                    handleTransferError(requestId, songId, "Phone not connected")
-                    return@launch
-                }
-
-                nodes.forEach { node ->
+                if (targetNodeId != null) {
                     messageClient.sendMessage(
-                        node.id,
+                        targetNodeId,
                         WearDataPaths.TRANSFER_REQUEST,
                         requestBytes,
                     ).await()
+                } else {
+                    val nodes = nodeClient.connectedNodes.await()
+                    if (nodes.isEmpty()) {
+                        handleTransferError(requestId, songId, "Phone not connected")
+                        return@launch
+                    }
+
+                    nodes.forEach { node ->
+                        messageClient.sendMessage(
+                            node.id,
+                            WearDataPaths.TRANSFER_REQUEST,
+                            requestBytes,
+                        ).await()
+                    }
                 }
                 Timber.tag(TAG).d("Transfer requested: songId=$songId, requestId=$requestId")
             } catch (e: Exception) {
@@ -180,10 +199,18 @@ class WearTransferRepository @Inject constructor(
         pendingMetadata[metadata.requestId] = metadata
         armTransferWatchdog(metadata.requestId, metadata.songId)
         _activeTransfers.update { map ->
-            val current = map[metadata.requestId] ?: return@update map
+            val current = map[metadata.requestId] ?: TransferState(
+                requestId = metadata.requestId,
+                songId = metadata.songId,
+                songTitle = metadata.title,
+                bytesTransferred = 0L,
+                totalBytes = metadata.fileSize,
+                status = WearTransferProgress.STATUS_TRANSFERRING,
+            )
             map + (metadata.requestId to current.copy(
                 songTitle = metadata.title,
                 totalBytes = metadata.fileSize,
+                status = WearTransferProgress.STATUS_TRANSFERRING,
             ))
         }
         Timber.tag(TAG).d(
@@ -195,21 +222,37 @@ class WearTransferRepository @Inject constructor(
      * Called when progress updates arrive from the phone during streaming.
      */
     fun onProgressReceived(progress: WearTransferProgress) {
+        val normalizedStatus = if (
+            progress.status == WearTransferProgress.STATUS_COMPLETED &&
+            activeChannelRequestIds.contains(progress.requestId)
+        ) {
+            WearTransferProgress.STATUS_TRANSFERRING
+        } else {
+            progress.status
+        }
+
         _activeTransfers.update { map ->
-            val current = map[progress.requestId] ?: return@update map
+            val current = map[progress.requestId] ?: TransferState(
+                requestId = progress.requestId,
+                songId = progress.songId,
+                songTitle = pendingMetadata[progress.requestId]?.title.orEmpty(),
+                bytesTransferred = 0L,
+                totalBytes = 0L,
+                status = normalizedStatus,
+            )
             map + (progress.requestId to current.copy(
-                bytesTransferred = progress.bytesTransferred,
-                totalBytes = progress.totalBytes,
-                status = progress.status,
+                bytesTransferred = maxOf(current.bytesTransferred, progress.bytesTransferred),
+                totalBytes = maxOf(current.totalBytes, progress.totalBytes),
+                status = normalizedStatus,
                 error = progress.error,
             ))
         }
 
-        if (progress.status == WearTransferProgress.STATUS_FAILED) {
+        if (normalizedStatus == WearTransferProgress.STATUS_FAILED) {
             handleTransferError(progress.requestId, progress.songId, progress.error ?: "Transfer failed")
         } else if (
-            progress.status == WearTransferProgress.STATUS_COMPLETED ||
-            progress.status == WearTransferProgress.STATUS_CANCELLED
+            normalizedStatus == WearTransferProgress.STATUS_COMPLETED ||
+            normalizedStatus == WearTransferProgress.STATUS_CANCELLED
         ) {
             clearTransferWatchdog(progress.requestId)
         } else {
@@ -222,10 +265,17 @@ class WearTransferRepository @Inject constructor(
      * Reads the audio stream, writes it to local storage, and inserts into Room.
      */
     suspend fun onChannelOpened(requestId: String, inputStream: InputStream) {
-        val metadata = pendingMetadata.remove(requestId)
+        activeChannelRequestIds.add(requestId)
+        val metadata = awaitMetadata(requestId)
         if (metadata == null) {
-            Timber.tag(TAG).w("No pending metadata for requestId=$requestId")
+            val songId = _activeTransfers.value[requestId]?.songId
+            if (!songId.isNullOrBlank()) {
+                handleTransferError(requestId, songId, "Transfer metadata missing")
+            } else {
+                Timber.tag(TAG).w("No pending metadata for requestId=$requestId")
+            }
             inputStream.close()
+            activeChannelRequestIds.remove(requestId)
             return
         }
 
@@ -238,12 +288,49 @@ class WearTransferRepository @Inject constructor(
         val previousSong = localSongDao.getSongById(metadata.songId)
 
         try {
+            _activeTransfers.update { map ->
+                val current = map[requestId] ?: TransferState(
+                    requestId = requestId,
+                    songId = metadata.songId,
+                    songTitle = metadata.title,
+                    bytesTransferred = 0L,
+                    totalBytes = metadata.fileSize,
+                    status = WearTransferProgress.STATUS_TRANSFERRING,
+                )
+                map + (requestId to current.copy(
+                    songTitle = metadata.title,
+                    totalBytes = maxOf(current.totalBytes, metadata.fileSize),
+                    status = WearTransferProgress.STATUS_TRANSFERRING,
+                ))
+            }
+            var totalReceived = 0L
+            var lastProgressUpdateAtBytes = 0L
+            var lastWatchdogTouchAt = SystemClock.elapsedRealtime()
             armTransferWatchdog(requestId, metadata.songId)
             localFile.outputStream().use { fileOut ->
                 val buffer = ByteArray(8192)
                 var bytesRead: Int
                 while (inputStream.read(buffer).also { bytesRead = it } != -1) {
                     fileOut.write(buffer, 0, bytesRead)
+                    totalReceived += bytesRead
+
+                    if (totalReceived - lastProgressUpdateAtBytes >= LOCAL_PROGRESS_UPDATE_INTERVAL_BYTES) {
+                        _activeTransfers.update { map ->
+                            val current = map[requestId] ?: return@update map
+                            map + (requestId to current.copy(
+                                bytesTransferred = maxOf(current.bytesTransferred, totalReceived),
+                                totalBytes = maxOf(current.totalBytes, metadata.fileSize),
+                                status = WearTransferProgress.STATUS_TRANSFERRING,
+                            ))
+                        }
+                        lastProgressUpdateAtBytes = totalReceived
+                    }
+
+                    val now = SystemClock.elapsedRealtime()
+                    if (now - lastWatchdogTouchAt >= WATCHDOG_TOUCH_INTERVAL_MS) {
+                        armTransferWatchdog(requestId, metadata.songId)
+                        lastWatchdogTouchAt = now
+                    }
                 }
             }
             inputStream.close()
@@ -299,6 +386,8 @@ class WearTransferRepository @Inject constructor(
             Timber.tag(TAG).e(e, "Failed to write transferred file")
             localFile.delete()
             handleTransferError(requestId, metadata.songId, e.message ?: "Write failed")
+        } finally {
+            activeChannelRequestIds.remove(requestId)
         }
     }
 
@@ -349,6 +438,7 @@ class WearTransferRepository @Inject constructor(
             pendingMetadata.remove(requestId)
             pendingArtworkByRequestId.remove(requestId)
             clearTransferWatchdog(requestId)
+            activeChannelRequestIds.remove(requestId)
         }
     }
 
@@ -377,6 +467,33 @@ class WearTransferRepository @Inject constructor(
         Timber.tag(TAG).d("Artwork cached for pending transfer: requestId=$requestId")
     }
 
+    private suspend fun awaitMetadata(requestId: String): WearTransferMetadata? {
+        pendingMetadata.remove(requestId)?.let { return it }
+        val startedAt = SystemClock.elapsedRealtime()
+        while (SystemClock.elapsedRealtime() - startedAt < METADATA_WAIT_TIMEOUT_MS) {
+            delay(METADATA_POLL_INTERVAL_MS)
+            pendingMetadata.remove(requestId)?.let { return it }
+        }
+        return null
+    }
+
+    private fun clearStaleTransfersForSong(songId: String) {
+        val staleRequestIds = _activeTransfers.value.values
+            .filter { it.songId == songId }
+            .map { it.requestId }
+        if (staleRequestIds.isEmpty()) return
+
+        _activeTransfers.update { map ->
+            map.filterValues { it.songId != songId }
+        }
+        staleRequestIds.forEach { staleRequestId ->
+            pendingMetadata.remove(staleRequestId)
+            pendingArtworkByRequestId.remove(staleRequestId)
+            clearTransferWatchdog(staleRequestId)
+            activeChannelRequestIds.remove(staleRequestId)
+        }
+    }
+
     private fun handleTransferError(requestId: String, songId: String, message: String) {
         Timber.tag(TAG).e("Transfer error: $message (requestId=$requestId, songId=$songId)")
         _activeTransfers.update { map ->
@@ -394,6 +511,7 @@ class WearTransferRepository @Inject constructor(
         pendingMetadata.remove(requestId)
         pendingArtworkByRequestId.remove(requestId)
         clearTransferWatchdog(requestId)
+        activeChannelRequestIds.remove(requestId)
     }
 
     private fun LocalSongEntity.hasPlayableLocalFile(): Boolean {

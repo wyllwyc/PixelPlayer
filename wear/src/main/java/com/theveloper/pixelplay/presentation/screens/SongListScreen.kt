@@ -41,7 +41,9 @@ import com.theveloper.pixelplay.presentation.components.WearTopTimeText
 import com.theveloper.pixelplay.presentation.viewmodel.BrowseUiState
 import com.theveloper.pixelplay.presentation.viewmodel.WearBrowseViewModel
 import com.theveloper.pixelplay.presentation.theme.LocalWearPalette
-import com.theveloper.pixelplay.presentation.theme.radialBackgroundBrush
+import com.theveloper.pixelplay.presentation.theme.screenBackgroundColor
+import com.theveloper.pixelplay.presentation.theme.surfaceContainerColor
+import com.theveloper.pixelplay.presentation.theme.surfaceContainerHighColor
 import com.theveloper.pixelplay.shared.WearBrowseRequest
 import com.theveloper.pixelplay.shared.WearLibraryItem
 import androidx.compose.material.icons.Icons
@@ -98,7 +100,7 @@ fun SongListScreen(
         viewModel.loadItems(browseType, contextId?.takeIf { it != "none" })
     }
 
-    val background = palette.radialBackgroundBrush()
+    val background = palette.screenBackgroundColor()
 
     when (val state = uiState) {
         is BrowseUiState.Loading -> {
@@ -233,7 +235,7 @@ fun SongListScreen(
                         items(state.items.size) { index ->
                             val song = state.items[index]
                             val isDownloaded = downloadedIds.contains(song.id)
-                            val transfer = activeTransfers.values.firstOrNull { it.songId == song.id }
+                            val transfer = pickTransferForSong(activeTransfers, song.id)
                             SongChip(
                                 song = song,
                                 isDownloaded = isDownloaded,
@@ -270,7 +272,7 @@ fun SongListScreen(
                 val menuSong = selectedSongForMenu
                 if (menuSong != null) {
                     val menuSongIsDownloaded = downloadedIds.contains(menuSong.id)
-                    val menuSongTransfer = activeTransfers.values.firstOrNull { it.songId == menuSong.id }
+                    val menuSongTransfer = pickTransferForSong(activeTransfers, menuSong.id)
                     val menuSongIsTransferring = menuSongTransfer != null &&
                         menuSongTransfer.status == WearTransferProgress.STATUS_TRANSFERRING
                     val menuSongCanSaveToWatch = menuSong.canSaveToWatch
@@ -333,6 +335,29 @@ fun SongListScreen(
     }
 }
 
+private fun pickTransferForSong(
+    transfers: kotlin.collections.Map<String, TransferState>,
+    songId: String,
+): TransferState? {
+    return transfers.values
+        .asSequence()
+        .filter { it.songId == songId }
+        .maxWithOrNull(
+            compareBy<TransferState>(
+                { transferStatusPriority(it.status) },
+                { it.bytesTransferred }
+            )
+        )
+}
+
+private fun transferStatusPriority(status: String): Int = when (status) {
+    WearTransferProgress.STATUS_TRANSFERRING -> 4
+    WearTransferProgress.STATUS_FAILED -> 3
+    WearTransferProgress.STATUS_CANCELLED -> 2
+    WearTransferProgress.STATUS_COMPLETED -> 1
+    else -> 0
+}
+
 @Composable
 private fun SongChip(
     song: WearLibraryItem,
@@ -385,7 +410,7 @@ private fun SongChip(
                     )
                     isTransferring -> CircularProgressIndicator(
                         indicatorColor = palette.shuffleActive,
-                        trackColor = palette.chipContainer,
+                        trackColor = palette.surfaceContainerColor(),
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
                     )
@@ -399,7 +424,7 @@ private fun SongChip(
             },
             onClick = onClick,
             colors = ChipDefaults.chipColors(
-                backgroundColor = palette.chipContainer,
+                backgroundColor = palette.surfaceContainerColor(),
                 contentColor = palette.chipContent,
             ),
             modifier = Modifier
@@ -412,7 +437,7 @@ private fun SongChip(
                 .align(Alignment.CenterEnd)
                 .size(34.dp)
                 .background(
-                    color = palette.controlContainer.copy(alpha = 0.36f),
+                    color = palette.surfaceContainerHighColor().copy(alpha = 0.74f),
                     shape = CircleShape,
                 )
                 .clickable(onClick = onMenuClick),
@@ -445,18 +470,18 @@ private fun SongActionScreen(
 
     val playNowColor = palette.shuffleActive.copy(alpha = 0.38f)
     val playNextColor = palette.repeatActive.copy(alpha = 0.38f)
-    val addToQueueColor = palette.controlContainer.copy(alpha = 0.56f)
+    val addToQueueColor = palette.surfaceContainerHighColor()
     val saveToWatchColor = if (!canSaveToWatch || isDownloaded || isTransferring) {
         palette.controlDisabledContainer
     } else {
         palette.favoriteActive.copy(alpha = 0.40f)
     }
-    val cancelColor = palette.chipContainer.copy(alpha = 0.50f)
+    val cancelColor = palette.surfaceContainerColor()
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(palette.radialBackgroundBrush())
+            .background(palette.screenBackgroundColor())
             .zIndex(12f),
     ) {
         ScalingLazyColumn(
@@ -573,12 +598,12 @@ private fun ConfirmSaveToWatchScreen(
     val columnState = rememberResponsiveColumnState()
 
     val confirmColor = palette.favoriteActive.copy(alpha = 0.42f)
-    val cancelColor = palette.chipContainer.copy(alpha = 0.50f)
+    val cancelColor = palette.surfaceContainerColor()
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(palette.radialBackgroundBrush())
+            .background(palette.screenBackgroundColor())
             .zIndex(14f),
     ) {
         ScalingLazyColumn(

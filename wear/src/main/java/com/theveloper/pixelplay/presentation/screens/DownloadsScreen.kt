@@ -36,6 +36,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.core.content.ContextCompat
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
+import androidx.wear.compose.material.CircularProgressIndicator
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
@@ -44,8 +45,11 @@ import com.google.android.horologist.compose.layout.rememberResponsiveColumnStat
 import com.theveloper.pixelplay.presentation.components.AlwaysOnScalingPositionIndicator
 import com.theveloper.pixelplay.presentation.components.WearTopTimeText
 import com.theveloper.pixelplay.presentation.theme.LocalWearPalette
-import com.theveloper.pixelplay.presentation.theme.radialBackgroundBrush
+import com.theveloper.pixelplay.presentation.theme.screenBackgroundColor
+import com.theveloper.pixelplay.presentation.theme.surfaceContainerColor
+import com.theveloper.pixelplay.presentation.theme.surfaceContainerHighColor
 import com.theveloper.pixelplay.presentation.viewmodel.WearDownloadsViewModel
+import com.theveloper.pixelplay.shared.WearTransferProgress
 
 /**
  * Screen showing songs stored locally on the watch.
@@ -57,6 +61,7 @@ fun DownloadsScreen(
     viewModel: WearDownloadsViewModel = hiltViewModel(),
 ) {
     val localSongs by viewModel.localSongs.collectAsState()
+    val activeTransfers by viewModel.activeTransfers.collectAsState()
     val deviceSongs by viewModel.deviceSongs.collectAsState()
     val isDeviceLibraryLoading by viewModel.isDeviceLibraryLoading.collectAsState()
     val deviceLibraryError by viewModel.deviceLibraryError.collectAsState()
@@ -85,8 +90,13 @@ fun DownloadsScreen(
     LaunchedEffect(hasAudioPermission) {
         viewModel.refreshDeviceLibrary(hasPermission = hasAudioPermission)
     }
+    val transferringStates = activeTransfers.values
+        .filter { it.status == WearTransferProgress.STATUS_TRANSFERRING }
+        .sortedByDescending { it.bytesTransferred }
 
-    val background = palette.radialBackgroundBrush()
+    val background = palette.screenBackgroundColor()
+    val surfaceContainer = palette.surfaceContainerColor()
+    val elevatedSurfaceContainer = palette.surfaceContainerHighColor()
 
     Box(
         modifier = Modifier
@@ -109,6 +119,61 @@ fun DownloadsScreen(
                         .fillMaxWidth()
                         .padding(bottom = 2.dp),
                 )
+            }
+
+            if (transferringStates.isNotEmpty()) {
+                item {
+                    Text(
+                        text = "Transferring from phone",
+                        style = MaterialTheme.typography.caption2,
+                        color = palette.textSecondary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp, bottom = 2.dp),
+                    )
+                }
+
+                items(transferringStates.size) { index ->
+                    val transfer = transferringStates[index]
+                    val progressText = if (transfer.totalBytes > 0L) {
+                        "${(transfer.progress * 100f).toInt().coerceIn(0, 100)}%"
+                    } else {
+                        "Starting..."
+                    }
+                    Chip(
+                        label = {
+                            Text(
+                                text = transfer.songTitle.ifBlank { "Preparing transfer..." },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = palette.textPrimary,
+                            )
+                        },
+                        secondaryLabel = {
+                            Text(
+                                text = progressText,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = palette.textSecondary.copy(alpha = 0.82f),
+                            )
+                        },
+                        icon = {
+                            CircularProgressIndicator(
+                                indicatorColor = palette.shuffleActive,
+                                trackColor = surfaceContainer,
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        },
+                        onClick = {},
+                        colors = ChipDefaults.chipColors(
+                            backgroundColor = elevatedSurfaceContainer,
+                            contentColor = palette.chipContent,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
 
             item {
@@ -178,7 +243,7 @@ fun DownloadsScreen(
                             onSongClick(song.songId)
                         },
                         colors = ChipDefaults.chipColors(
-                            backgroundColor = palette.chipContainer,
+                            backgroundColor = surfaceContainer,
                             contentColor = palette.chipContent,
                         ),
                         modifier = Modifier.fillMaxWidth(),
@@ -223,7 +288,7 @@ fun DownloadsScreen(
                         },
                         onClick = { permissionLauncher.launch(audioPermission) },
                         colors = ChipDefaults.chipColors(
-                            backgroundColor = palette.chipContainer,
+                            backgroundColor = surfaceContainer,
                             contentColor = palette.chipContent,
                         ),
                         modifier = Modifier.fillMaxWidth(),
@@ -268,7 +333,7 @@ fun DownloadsScreen(
                         },
                         onClick = { viewModel.refreshDeviceLibrary(hasPermission = true) },
                         colors = ChipDefaults.chipColors(
-                            backgroundColor = palette.chipContainer,
+                            backgroundColor = surfaceContainer,
                             contentColor = palette.chipContent,
                         ),
                         modifier = Modifier.fillMaxWidth(),
@@ -325,7 +390,7 @@ fun DownloadsScreen(
                             onSongClick(song.songId)
                         },
                         colors = ChipDefaults.chipColors(
-                            backgroundColor = palette.chipContainer,
+                            backgroundColor = surfaceContainer,
                             contentColor = palette.chipContent,
                         ),
                         modifier = Modifier.fillMaxWidth(),

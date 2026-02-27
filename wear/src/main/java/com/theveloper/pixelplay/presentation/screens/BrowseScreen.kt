@@ -34,7 +34,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.theveloper.pixelplay.presentation.components.AlwaysOnScalingPositionIndicator
 import com.theveloper.pixelplay.presentation.components.WearTopTimeText
 import com.theveloper.pixelplay.presentation.theme.LocalWearPalette
-import com.theveloper.pixelplay.presentation.theme.radialBackgroundBrush
+import com.theveloper.pixelplay.presentation.theme.screenBackgroundColor
+import com.theveloper.pixelplay.presentation.theme.surfaceContainerColor
 
 /**
  * Root browse screen showing library categories.
@@ -47,7 +48,7 @@ fun BrowseScreen(
 ) {
     val columnState = rememberResponsiveColumnState()
     val palette = LocalWearPalette.current
-    val background = palette.radialBackgroundBrush()
+    val background = palette.screenBackgroundColor()
 
     Box(
         modifier = Modifier
@@ -167,7 +168,7 @@ private fun BrowseCategoryChip(
         },
         onClick = onClick,
         colors = ChipDefaults.chipColors(
-            backgroundColor = palette.chipContainer,
+            backgroundColor = palette.surfaceContainerColor(),
             contentColor = palette.chipContent,
         ),
         modifier = Modifier.fillMaxWidth(),

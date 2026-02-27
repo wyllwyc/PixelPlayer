@@ -42,7 +42,9 @@ import com.google.android.horologist.compose.layout.rememberResponsiveColumnStat
 import com.theveloper.pixelplay.presentation.components.AlwaysOnScalingPositionIndicator
 import com.theveloper.pixelplay.presentation.components.WearTopTimeText
 import com.theveloper.pixelplay.presentation.theme.LocalWearPalette
-import com.theveloper.pixelplay.presentation.theme.radialBackgroundBrush
+import com.theveloper.pixelplay.presentation.theme.screenBackgroundColor
+import com.theveloper.pixelplay.presentation.theme.surfaceContainerColor
+import com.theveloper.pixelplay.presentation.theme.surfaceContainerHighColor
 import com.theveloper.pixelplay.presentation.viewmodel.BrowseUiState
 import com.theveloper.pixelplay.presentation.viewmodel.WearBrowseViewModel
 import com.theveloper.pixelplay.presentation.viewmodel.WearPlayerViewModel
@@ -96,7 +98,7 @@ fun QueueScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(palette.radialBackgroundBrush()),
+            .background(palette.screenBackgroundColor()),
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -310,7 +312,7 @@ private fun QueueShortcutButton(
         targetValue = when {
             !enabled -> palette.controlDisabledContainer
             active -> activeColor.copy(alpha = 0.86f)
-            else -> palette.chipContainer
+            else -> palette.surfaceContainerColor()
         },
         animationSpec = spring(),
         label = "queueShortcutContainer",
@@ -393,9 +395,9 @@ private fun QueueSongChip(
         enabled = enabled,
         colors = ChipDefaults.chipColors(
             backgroundColor = if (isPlayingItem) {
-                palette.controlContainer.copy(alpha = 0.30f)
+                palette.surfaceContainerHighColor()
             } else {
-                palette.chipContainer
+                palette.surfaceContainerColor()
             },
             contentColor = palette.chipContent,
             secondaryContentColor = palette.textSecondary,

@@ -77,6 +77,7 @@ class WearCommandReceiver : WearableListenerService() {
     @Inject lateinit var musicRepository: MusicRepository
     @Inject lateinit var userPreferencesRepository: UserPreferencesRepository
     @Inject lateinit var dualPlayerEngine: DualPlayerEngine
+    @Inject lateinit var transferStateStore: PhoneWatchTransferStateStore
 
     private val json = Json { ignoreUnknownKeys = true }
     private var mediaController: MediaController? = null
@@ -895,6 +896,11 @@ class WearCommandReceiver : WearableListenerService() {
                     )
                     return@launch
                 }
+                transferStateStore.markRequested(
+                    requestId = request.requestId,
+                    songId = song.id,
+                    songTitle = song.title,
+                )
 
                 // 2. Verify this song is truly available offline on the phone.
                 if (!isSongTransferEligible(song)) {
@@ -933,6 +939,12 @@ class WearCommandReceiver : WearableListenerService() {
                     bitrate = song.bitrate ?: 0,
                     sampleRate = song.sampleRate ?: 0,
                     paletteSeedArgb = paletteSeedArgb,
+                )
+                transferStateStore.markMetadata(
+                    requestId = request.requestId,
+                    songId = song.id,
+                    songTitle = song.title,
+                    totalBytes = fileSize,
                 )
                 val metadataBytes = json.encodeToString(metadata).toByteArray(Charsets.UTF_8)
                 val msgClient = Wearable.getMessageClient(this@WearCommandReceiver)
@@ -1403,6 +1415,14 @@ class WearCommandReceiver : WearableListenerService() {
         status: String,
         error: String? = null,
     ) {
+        transferStateStore.markProgress(
+            requestId = requestId,
+            songId = songId,
+            bytesTransferred = bytesTransferred,
+            totalBytes = totalBytes,
+            status = status,
+            error = error,
+        )
         val progress = WearTransferProgress(
             requestId = requestId,
             songId = songId,

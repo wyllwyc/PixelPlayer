@@ -50,7 +50,7 @@ private val DefaultWearPalette = WearPalette(
     controlContent = Color(0xFF2C0C62),
     controlDisabledContainer = DefaultDisabledContainer,
     controlDisabledContent = bestContrastContent(DefaultDisabledContainer),
-    chipContainer = Color(0xFFD8CEF3).copy(alpha = 0.22f),
+    chipContainer = Color(0xFF2D243F).copy(alpha = 0.94f),
     chipContent = Color(0xFFE8E0FF),
     favoriteActive = Color(0xFFF1608E),
     shuffleActive = Color(0xFF44CDC4),
@@ -67,6 +67,10 @@ fun WearPalette.radialBackgroundBrush(): Brush = Brush.radialGradient(
         1.0f to Color.Black,
     ),
 )
+
+fun WearPalette.screenBackgroundColor(): Color = lerp(gradientMiddle, gradientBottom, 0.58f)
+fun WearPalette.surfaceContainerColor(): Color = lerp(screenBackgroundColor(), Color.White, 0.10f).copy(alpha = 0.95f)
+fun WearPalette.surfaceContainerHighColor(): Color = lerp(screenBackgroundColor(), Color.White, 0.16f).copy(alpha = 0.98f)
 
 @Composable
 fun WearPixelPlayTheme(
@@ -140,11 +144,12 @@ private fun buildPaletteFromSeedColor(seed: Color): WearPalette {
     val top = lerp(tunedSeed, Color.Black, 0.30f)
     val middle = lerp(tunedSeed, Color.Black, 0.57f)
     val bottom = lerp(tunedSeed, Color.Black, 0.84f)
-    val controlContainer = lerp(tunedSeed, Color.White, 0.80f)
-    val controlContent = lerp(tunedSeed, Color.Black, 0.82f)
-    val controlDisabledContainer = lerp(tunedSeed, Color.Black, 0.58f).copy(alpha = 0.96f)
+    val surfaceBackground = lerp(middle, bottom, 0.58f)
+    val chipContainer = lerp(surfaceBackground, Color.White, 0.10f).copy(alpha = 0.95f)
+    val controlContainer = lerp(surfaceBackground, Color.White, 0.18f).copy(alpha = 0.98f)
+    val controlContent = bestContrastContent(controlContainer)
+    val controlDisabledContainer = lerp(surfaceBackground, Color.Black, 0.34f).copy(alpha = 0.96f)
     val controlDisabledContent = bestContrastContent(controlDisabledContainer)
-    val chipContainer = lerp(tunedSeed, Color.White, 0.34f).copy(alpha = 0.24f)
 
     return WearPalette(
         gradientTop = top,

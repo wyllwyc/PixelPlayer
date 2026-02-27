@@ -6,6 +6,7 @@ import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.Wearable
 import com.theveloper.pixelplay.shared.WearCapabilities
 import com.theveloper.pixelplay.shared.WearDataPaths
+import com.theveloper.pixelplay.shared.WearTransferProgress
 import com.theveloper.pixelplay.shared.WearTransferRequest
 import kotlinx.coroutines.tasks.await
 import kotlinx.serialization.encodeToString
@@ -18,6 +19,7 @@ import javax.inject.Singleton
 @Singleton
 class WearPhoneTransferSender @Inject constructor(
     private val application: Application,
+    private val transferStateStore: PhoneWatchTransferStateStore,
 ) {
     private val capabilityClient by lazy { Wearable.getCapabilityClient(application) }
     private val messageClient: MessageClient by lazy { Wearable.getMessageClient(application) }
@@ -36,7 +38,8 @@ class WearPhoneTransferSender @Inject constructor(
         }
     }
 
-    suspend fun requestSongTransfer(songId: String): Result<Int> {
+    suspend fun requestSongTransfer(songId: String, songTitle: String = ""): Result<Int> {
+        var requestId: String? = null
         return runCatching {
             val capability = capabilityClient.getCapability(
                 WearCapabilities.PIXELPLAY_WEAR_APP,
@@ -52,7 +55,13 @@ class WearPhoneTransferSender @Inject constructor(
                 requestId = UUID.randomUUID().toString(),
                 songId = songId,
             )
+            requestId = request.requestId
             val payload = json.encodeToString(request).toByteArray(Charsets.UTF_8)
+            transferStateStore.markRequested(
+                requestId = request.requestId,
+                songId = songId,
+                songTitle = songTitle,
+            )
 
             nodes.forEach { node ->
                 messageClient.sendMessage(
@@ -62,6 +71,18 @@ class WearPhoneTransferSender @Inject constructor(
                 ).await()
             }
             nodes.size
+        }.onFailure { error ->
+            requestId?.let { safeRequestId ->
+                transferStateStore.markProgress(
+                    requestId = safeRequestId,
+                    songId = songId,
+                    bytesTransferred = 0L,
+                    totalBytes = 0L,
+                    status = WearTransferProgress.STATUS_FAILED,
+                    error = error.message ?: "Failed to request transfer",
+                    songTitle = songTitle,
+                )
+            }
         }
     }
 

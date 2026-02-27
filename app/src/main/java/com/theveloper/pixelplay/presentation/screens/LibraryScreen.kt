@@ -5,6 +5,7 @@ package com.theveloper.pixelplay.presentation.screens
 import com.theveloper.pixelplay.presentation.navigation.navigateSafely
 
 import android.os.Trace
+import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -56,7 +57,9 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material.icons.rounded.ViewModule
 import com.theveloper.pixelplay.presentation.components.ToggleSegmentButton
 import androidx.compose.material3.LoadingIndicator
@@ -146,6 +149,7 @@ import com.theveloper.pixelplay.presentation.viewmodel.PlayerViewModel
 import com.theveloper.pixelplay.presentation.viewmodel.StablePlayerState
 import com.theveloper.pixelplay.presentation.viewmodel.PlaylistUiState
 import com.theveloper.pixelplay.presentation.viewmodel.PlaylistViewModel
+import com.theveloper.pixelplay.presentation.viewmodel.SongInfoBottomSheetViewModel
 import com.theveloper.pixelplay.data.model.LibraryTabId
 import com.theveloper.pixelplay.data.model.toLibraryTabIdOrNull
 import com.theveloper.pixelplay.data.preferences.LibraryNavigationMode
@@ -201,6 +205,8 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.ripple
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.theveloper.pixelplay.presentation.components.AutoScrollingTextOnDemand
 import com.theveloper.pixelplay.presentation.screens.CreatePlaylistDialog
 import com.theveloper.pixelplay.presentation.components.PlaylistBottomSheet
@@ -218,6 +224,8 @@ import androidx.paging.LoadState
 import com.theveloper.pixelplay.presentation.components.ExpressiveScrollBar
 import com.theveloper.pixelplay.presentation.components.LibrarySortBottomSheet
 import com.theveloper.pixelplay.presentation.components.subcomps.EnhancedSongListItem
+import com.theveloper.pixelplay.data.service.wear.PhoneWatchTransferState
+import com.theveloper.pixelplay.shared.WearTransferProgress
 import kotlin.math.abs
 
 val ListExtraBottomGap = 30.dp
@@ -225,6 +233,102 @@ val PlayerSheetCollapsedCornerRadius = 32.dp
 private const val MAX_ALBUM_MULTI_SELECTION = 6
 private const val ENABLE_FOLDERS_SOURCE_TOGGLE = false
 private const val ENABLE_FOLDERS_STORAGE_FILTER = false
+
+@Composable
+private fun WatchTransferProgressDialog(
+    transfer: PhoneWatchTransferState,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val animatedProgress by animateFloatAsState(
+        targetValue = transfer.progress.coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 300),
+        label = "WatchTransferProgressDialog"
+    )
+    val progressPercent = (animatedProgress * 100f).toInt().coerceIn(0, 100)
+    val bytesText = if (transfer.totalBytes > 0L) {
+        val sent = Formatter.formatFileSize(context, transfer.bytesTransferred)
+        val total = Formatter.formatFileSize(context, transfer.totalBytes)
+        "$sent / $total"
+    } else {
+        "Starting transfer..."
+    }
+    val statusText = when (transfer.status) {
+        WearTransferProgress.STATUS_TRANSFERRING -> "Transferring"
+        WearTransferProgress.STATUS_COMPLETED -> "Completed"
+        WearTransferProgress.STATUS_FAILED -> "Failed"
+        WearTransferProgress.STATUS_CANCELLED -> "Cancelled"
+        else -> "Preparing"
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
+        )
+    ) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            tonalElevation = 6.dp,
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Sending to Watch",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Box(contentAlignment = Alignment.Center) {
+                    CircularWavyProgressIndicator(modifier = Modifier.size(52.dp))
+                    Text(
+                        text = "$progressPercent%",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                LinearWavyProgressIndicator(
+                    progress = { animatedProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(50)),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                )
+                Text(
+                    text = transfer.songTitle.ifBlank { "Preparing transfer..." },
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "$statusText • $bytesText",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
+                transfer.error?.takeIf { it.isNotBlank() }?.let { errorText ->
+                    Text(
+                        text = errorText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
+    }
+}
 
 private data class LibraryScreenPlayerProjection(
     val currentFolder: MusicFolder? = null,
@@ -275,7 +379,8 @@ fun LibraryScreen(
     navController: NavController,
     playerViewModel: PlayerViewModel = hiltViewModel(),
     playlistViewModel: PlaylistViewModel = hiltViewModel(),
-    libraryViewModel: LibraryViewModel = hiltViewModel()
+    libraryViewModel: LibraryViewModel = hiltViewModel(),
+    songInfoBottomSheetViewModel: SongInfoBottomSheetViewModel = hiltViewModel()
 ) {
     // La recolección de estados de alto nivel se mantiene mínima.
     val context = LocalContext.current // Added context
@@ -315,6 +420,9 @@ fun LibraryScreen(
         }
     }
     val isSortSheetVisible by playerViewModel.isSortingSheetVisible.collectAsStateWithLifecycle()
+    val isSendingToWatch by songInfoBottomSheetViewModel.isSendingToWatch.collectAsStateWithLifecycle()
+    val activeWatchTransfer by songInfoBottomSheetViewModel.activeWatchTransfer.collectAsStateWithLifecycle()
+    var showWatchTransferDialog by remember { mutableStateOf(false) }
     val canNavigateBackInFolders by remember(playerViewModel) {
         playerViewModel.playerUiState
             .map { uiState -> uiState.currentFolder != null && uiState.folderBackGestureNavigationEnabled }
@@ -336,6 +444,12 @@ fun LibraryScreen(
 
     var showReorderTabsSheet by remember { mutableStateOf(false) }
     var showTabSwitcherSheet by remember { mutableStateOf(false) }
+
+    LaunchedEffect(activeWatchTransfer?.requestId) {
+        if (activeWatchTransfer == null) {
+            showWatchTransferDialog = false
+        }
+    }
 
     // Multi-selection state
     val multiSelectionState = playerViewModel.multiSelectionStateHolder
@@ -592,6 +706,44 @@ fun LibraryScreen(
                     }
                 },
                 actions = {
+                    if (isSendingToWatch) {
+                        val watchTransferProgress = activeWatchTransfer?.progress ?: 0f
+                        val watchTransferPercent = (watchTransferProgress * 100f).toInt().coerceIn(0, 100)
+                        Surface(
+                            modifier = Modifier
+                                .padding(end = 8.dp)
+                                .clip(CircleShape)
+                                .clickable(enabled = activeWatchTransfer != null) {
+                                    showWatchTransferDialog = true
+                                },
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier.size(18.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularWavyProgressIndicator(modifier = Modifier.size(18.dp))
+                                }
+                                Icon(
+                                    painter = painterResource(R.drawable.rounded_watch_arrow_down_24),
+                                    contentDescription = "Watch transfer",
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "$watchTransferPercent%",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
                     FilledIconButton(
                         modifier = Modifier.padding(end = 14.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
@@ -1404,6 +1556,13 @@ fun LibraryScreen(
         }
     )
 
+    if (showWatchTransferDialog && activeWatchTransfer != null) {
+        WatchTransferProgressDialog(
+            transfer = activeWatchTransfer!!,
+            onDismiss = { showWatchTransferDialog = false }
+        )
+    }
+
     if (showSongInfoBottomSheet && selectedSongForInfo != null) {
         val currentSong = selectedSongForInfo
         val isFavorite = remember(currentSong?.id, favoriteIds) { derivedStateOf { currentSong?.let {
@@ -1453,7 +1612,8 @@ fun LibraryScreen(
                 generateAiMetadata = { fields ->
                     playerViewModel.generateAiMetadata(currentSong, fields)
                 },
-                removeFromListTrigger = {}
+                removeFromListTrigger = {},
+                songInfoViewModel = songInfoBottomSheetViewModel
             )
         }
     }
