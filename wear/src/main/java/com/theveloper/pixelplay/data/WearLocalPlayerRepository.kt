@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import androidx.media3.common.C
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -44,6 +45,8 @@ data class WearLocalPlayerState(
     val isPlaying: Boolean = false,
     val currentPositionMs: Long = 0L,
     val totalDurationMs: Long = 0L,
+    val isShuffleEnabled: Boolean = false,
+    val repeatMode: Int = Player.REPEAT_MODE_OFF,
 ) {
     val isEmpty: Boolean get() = songId.isEmpty()
 }
@@ -266,11 +269,35 @@ class WearLocalPlayerRepository @Inject constructor(
         exoPlayer?.seekTo(positionMs)
     }
 
+    fun toggleShuffle() {
+        scope.launch {
+            withContext(Dispatchers.Main) {
+                val player = exoPlayer ?: return@withContext
+                player.shuffleModeEnabled = !player.shuffleModeEnabled
+                updateState()
+            }
+        }
+    }
+
+    fun cycleRepeat() {
+        scope.launch {
+            withContext(Dispatchers.Main) {
+                val player = exoPlayer ?: return@withContext
+                player.repeatMode = when (player.repeatMode) {
+                    Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
+                    Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
+                    else -> Player.REPEAT_MODE_OFF
+                }
+                updateState()
+            }
+        }
+    }
+
     fun playQueueIndex(index: Int) {
         scope.launch {
             withContext(Dispatchers.Main) {
                 val player = exoPlayer ?: return@withContext
-                if (index !in currentQueueSongIds.indices) return@withContext
+                if (index !in 0 until player.mediaItemCount) return@withContext
 
                 player.seekToDefaultPosition(index)
                 if (player.playbackState == Player.STATE_IDLE) {
@@ -344,6 +371,8 @@ class WearLocalPlayerRepository @Inject constructor(
             isPlaying = player.isPlaying,
             currentPositionMs = player.currentPosition,
             totalDurationMs = player.duration.coerceAtLeast(0L),
+            isShuffleEnabled = player.shuffleModeEnabled,
+            repeatMode = player.repeatMode,
         )
         updateQueueState(currentIndex = player.currentMediaItemIndex)
         updatePaletteForSong(currentItem?.mediaId.orEmpty())
@@ -366,18 +395,36 @@ class WearLocalPlayerRepository @Inject constructor(
     }
 
     private fun updateQueueState(currentIndex: Int? = null) {
+        val player = exoPlayer
         val rawCurrentIndex = currentIndex ?: exoPlayer?.currentMediaItemIndex ?: -1
-        val startIndex = if (rawCurrentIndex in currentQueueSongIds.indices) {
-            rawCurrentIndex
-        } else {
-            0
+        val visibleQueueIndices = when {
+            player == null -> {
+                if (rawCurrentIndex in currentQueueSongIds.indices) {
+                    (rawCurrentIndex until currentQueueSongIds.size).toList()
+                } else {
+                    currentQueueSongIds.indices.toList()
+                }
+            }
+
+            rawCurrentIndex !in 0 until player.mediaItemCount -> {
+                (0 until player.mediaItemCount).toList()
+            }
+
+            else -> buildVisibleQueueIndices(player, rawCurrentIndex)
         }
 
-        val queueItems = currentQueueSongIds.mapIndexedNotNull { index, songId ->
-            val queueItem = currentQueueItemsById[songId] ?: return@mapIndexedNotNull null
+        val queueItems = visibleQueueIndices.mapNotNull { index ->
+            val mediaItem = player?.getMediaItemAt(index)
+            val songId = mediaItem?.mediaId ?: currentQueueSongIds.getOrNull(index) ?: return@mapNotNull null
+            val queueItem = currentQueueItemsById[songId]
+            val title = queueItem?.title
+                ?: mediaItem?.mediaMetadata?.title?.toString()
+                ?: return@mapNotNull null
+            val artist = queueItem?.artist ?: mediaItem?.mediaMetadata?.artist?.toString().orEmpty()
+            val album = queueItem?.album ?: mediaItem?.mediaMetadata?.albumTitle?.toString().orEmpty()
             val subtitle = when {
                 index == rawCurrentIndex -> {
-                    val supportingText = queueItem.artist.ifBlank { queueItem.album }
+                    val supportingText = artist.ifBlank { album }
                     if (supportingText.isBlank()) {
                         "Playing on watch"
                     } else {
@@ -385,17 +432,17 @@ class WearLocalPlayerRepository @Inject constructor(
                     }
                 }
 
-                queueItem.artist.isNotBlank() -> queueItem.artist
-                else -> queueItem.album
+                artist.isNotBlank() -> artist
+                else -> album
             }
 
             WearLibraryItem(
                 id = index.toString(),
-                title = queueItem.title,
+                title = title,
                 subtitle = subtitle,
                 type = WearLibraryItem.TYPE_SONG,
             )
-        }.drop(startIndex)
+        }
 
         val resolvedCurrentIndex = if (rawCurrentIndex in currentQueueSongIds.indices && queueItems.isNotEmpty()) {
             0
@@ -407,6 +454,32 @@ class WearLocalPlayerRepository @Inject constructor(
             items = queueItems,
             currentIndex = resolvedCurrentIndex,
         )
+    }
+
+    private fun buildVisibleQueueIndices(player: ExoPlayer, currentIndex: Int): List<Int> {
+        if (currentIndex !in 0 until player.mediaItemCount) {
+            return (0 until player.mediaItemCount).toList()
+        }
+
+        val visibleIndices = mutableListOf(currentIndex)
+        val visited = hashSetOf(currentIndex)
+        val timeline = player.currentTimeline
+        var nextIndex = timeline.getNextWindowIndex(
+            currentIndex,
+            Player.REPEAT_MODE_OFF,
+            player.shuffleModeEnabled,
+        )
+
+        while (nextIndex != C.INDEX_UNSET && visited.add(nextIndex)) {
+            visibleIndices += nextIndex
+            nextIndex = timeline.getNextWindowIndex(
+                nextIndex,
+                Player.REPEAT_MODE_OFF,
+                player.shuffleModeEnabled,
+            )
+        }
+
+        return visibleIndices
     }
 
     private fun updatePaletteForSong(songId: String) {

@@ -86,6 +86,8 @@ class WearPlayerViewModel @Inject constructor(
                     isPlaying = localState.isPlaying,
                     currentPositionMs = localState.currentPositionMs,
                     totalDurationMs = localState.totalDurationMs,
+                    isShuffleEnabled = localState.isShuffleEnabled,
+                    repeatMode = localState.repeatMode,
                 )
             }
 
@@ -294,13 +296,19 @@ class WearPlayerViewModel @Inject constructor(
     }
 
     fun toggleShuffle() {
-        if (isWatchOutputSelected.value) return // Not supported for local playback
-        playbackController.toggleShuffle()
+        if (isWatchOutputSelected.value) {
+            localPlayerRepository.toggleShuffle()
+        } else {
+            playbackController.toggleShuffle()
+        }
     }
 
     fun cycleRepeat() {
-        if (isWatchOutputSelected.value) return // Not supported for local playback
-        playbackController.cycleRepeat()
+        if (isWatchOutputSelected.value) {
+            localPlayerRepository.cycleRepeat()
+        } else {
+            playbackController.cycleRepeat()
+        }
     }
 
     fun volumeUp() {

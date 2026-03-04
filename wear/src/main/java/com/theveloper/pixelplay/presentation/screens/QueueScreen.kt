@@ -78,6 +78,9 @@ fun QueueScreen(
 
     val showingLocalQueue = isWatchOutputSelected
     val remoteControlsEnabled = isPhoneConnected && !isWatchOutputSelected
+    val queueModeControlsEnabled = !playerState.isEmpty && (
+        showingLocalQueue || remoteControlsEnabled
+    )
     val queueSelectionEnabled = showingLocalQueue || remoteControlsEnabled
     val columnState = rememberResponsiveColumnState(
         contentPadding = {
@@ -115,15 +118,21 @@ fun QueueScreen(
                 shuffleEnabled = playerState.isShuffleEnabled,
                 repeatMode = playerState.repeatMode,
                 timerEnabled = timerState.mode != WearSleepTimerMode.OFF,
-                enabled = remoteControlsEnabled,
+                shuffleEnabledAction = queueModeControlsEnabled,
+                timerEnabledAction = remoteControlsEnabled,
+                repeatEnabledAction = queueModeControlsEnabled,
                 onShuffleClick = {
                     viewModel.toggleShuffle()
-                    browseViewModel.refresh()
+                    if (remoteControlsEnabled) {
+                        browseViewModel.refresh()
+                    }
                 },
                 onTimerClick = onTimerClick,
                 onRepeatClick = {
                     viewModel.cycleRepeat()
-                    browseViewModel.refresh()
+                    if (remoteControlsEnabled) {
+                        browseViewModel.refresh()
+                    }
                 },
             )
 
@@ -311,7 +320,9 @@ private fun QueueShortcutsRow(
     shuffleEnabled: Boolean,
     repeatMode: Int,
     timerEnabled: Boolean,
-    enabled: Boolean,
+    shuffleEnabledAction: Boolean,
+    timerEnabledAction: Boolean,
+    repeatEnabledAction: Boolean,
     onShuffleClick: () -> Unit,
     onTimerClick: () -> Unit,
     onRepeatClick: () -> Unit,
@@ -333,7 +344,7 @@ private fun QueueShortcutsRow(
                 icon = Icons.Rounded.Shuffle,
                 contentDescription = "Shuffle",
                 active = shuffleEnabled,
-                enabled = enabled,
+                enabled = shuffleEnabledAction,
                 activeColor = palette.shuffleActive,
                 onClick = onShuffleClick,
             )
@@ -343,7 +354,7 @@ private fun QueueShortcutsRow(
                 icon = Icons.Rounded.Timer,
                 contentDescription = "Timer",
                 active = timerEnabled,
-                enabled = enabled,
+                enabled = timerEnabledAction,
                 activeColor = palette.favoriteActive,
                 onClick = onTimerClick,
             )
@@ -353,7 +364,7 @@ private fun QueueShortcutsRow(
                 icon = if (repeatMode == 1) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
                 contentDescription = "Repeat",
                 active = repeatMode != 0,
-                enabled = enabled,
+                enabled = repeatEnabledAction,
                 activeColor = palette.repeatActive,
                 onClick = onRepeatClick,
             )

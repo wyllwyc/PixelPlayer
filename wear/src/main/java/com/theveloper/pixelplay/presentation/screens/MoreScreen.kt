@@ -88,6 +88,10 @@ fun MoreScreen(
     val queueItems = (queueState as? BrowseUiState.Success)?.items.orEmpty()
     val upNextTitle = queueItems.drop(1).firstOrNull()?.title ?: "Nothing queued"
     val currentSongId = playerState.songId
+    val favoriteActionEnabled = isPhoneConnected && !isWatchOutputSelected && !playerState.isEmpty
+    val playbackModeActionsEnabled = !playerState.isEmpty && (
+        isWatchOutputSelected || isPhoneConnected
+    )
     val isCurrentSongDownloaded = currentSongId.isNotBlank() && downloadedSongIds.contains(currentSongId)
     val isCurrentSongTransferring = activeTransfers.values.any {
         it.songId == currentSongId && it.status == WearTransferProgress.STATUS_TRANSFERRING
@@ -141,7 +145,9 @@ fun MoreScreen(
                     isFavorite = playerState.isFavorite,
                     isShuffleEnabled = playerState.isShuffleEnabled,
                     repeatMode = playerState.repeatMode,
-                    enabled = isPhoneConnected && !isWatchOutputSelected && !playerState.isEmpty,
+                    favoriteEnabled = favoriteActionEnabled,
+                    shuffleEnabled = playbackModeActionsEnabled,
+                    repeatEnabled = playbackModeActionsEnabled,
                     onToggleFavorite = playerViewModel::toggleFavorite,
                     onToggleShuffle = playerViewModel::toggleShuffle,
                     onCycleRepeat = playerViewModel::cycleRepeat,
@@ -227,7 +233,9 @@ private fun MoreQuickActionsRow(
     isFavorite: Boolean,
     isShuffleEnabled: Boolean,
     repeatMode: Int,
-    enabled: Boolean,
+    favoriteEnabled: Boolean,
+    shuffleEnabled: Boolean,
+    repeatEnabled: Boolean,
     onToggleFavorite: () -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeat: () -> Unit,
@@ -246,7 +254,7 @@ private fun MoreQuickActionsRow(
             icon = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
             active = isFavorite,
             activeColor = palette.favoriteActive,
-            enabled = enabled,
+            enabled = favoriteEnabled,
             onClick = onToggleFavorite,
             contentDescription = "Like",
         )
@@ -255,7 +263,7 @@ private fun MoreQuickActionsRow(
             icon = Icons.Rounded.Shuffle,
             active = isShuffleEnabled,
             activeColor = palette.shuffleActive,
-            enabled = enabled,
+            enabled = shuffleEnabled,
             onClick = onToggleShuffle,
             contentDescription = "Shuffle",
         )
@@ -264,7 +272,7 @@ private fun MoreQuickActionsRow(
             icon = if (repeatMode == 1) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
             active = repeatMode != 0,
             activeColor = palette.repeatActive,
-            enabled = enabled,
+            enabled = repeatEnabled,
             onClick = onCycleRepeat,
             contentDescription = "Repeat",
         )
