@@ -239,8 +239,8 @@ fun DailyMixHeader(thumbnails: ImmutableList<Song>) {
             .background(
                 brush = Brush.horizontalGradient(
                     colors = listOf(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.7f)
+                        MaterialTheme.colorScheme.primary, //.copy(alpha = 0.7f),
+                        MaterialTheme.colorScheme.tertiary //.copy(alpha = 0.7f)
                     )
                 )
             ),
