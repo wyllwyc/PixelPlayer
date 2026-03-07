@@ -191,18 +191,9 @@ class MainActivity : ComponentActivity() {
         }
         super.onCreate(savedInstanceState)
 
-        // Keep splash screen visible until DataStore has emitted the initial setup state,
-        // preventing the blank-screen flash between splash and first frame.
-        splashScreen.setKeepOnScreenCondition { 
-            val isSetupReady = mainViewModel.isSetupComplete.value != null
-            if (isSetupReady && !isUIVisiblyReady) {
-                // Once setup state is known, the UI starts composing.
-                // We mark it as ready slightly after composition starts to ensure
-                // the first frame is rendered before revealing.
-                isUIVisiblyReady = true
-            }
-            !isSetupReady
-        }
+        // MD3 Optimization: Release Splash Screen immediately to render UI skeleton.
+        // Data loading is handled via optimistic UI and smooth transitions.
+        splashScreen.setKeepOnScreenCondition { false }
 
         // LEER SEÑAL DE BENCHMARK
         val isBenchmarkMode = intent.getBooleanExtra("is_benchmark", false)
@@ -282,35 +273,30 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize().graphicsLayer { alpha = contentAlpha }, 
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    if (showSetupScreen != null) {
-                        AnimatedContent(
-                            targetState = showSetupScreen,
-                            transitionSpec = {
-                                if (targetState == false) {
-                                    // Transition from Setup to Main App
-                                    scaleIn(initialScale = 0.8f, animationSpec = tween(400)) + fadeIn(animationSpec = tween(400)) togetherWith
-                                            slideOutHorizontally(targetOffsetX = { -it }, animationSpec = tween(400)) + fadeOut(animationSpec = tween(400))
-                                } else {
-                                    // Placeholder for other transitions, e.g., Main App to Setup
-                                    fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(400))
-                                }
-                            },
-                            label = "SetupTransition"
-                        ) { targetState ->
-                            if (targetState == true) {
-                                SetupScreen(onSetupComplete = {
-                                    // Re-check permissions on completion.
-                                    // If permissions are still missing despite setup "completing" (e.g. user skipped or ignored?), 
-                                    // the LaunchedEffect(permissionsValid) above handles state, 
-                                    // but we explicitly update local state here too.
-                                    showSetupScreen = false
-                                })
+                    val isSetupReadyByValue = isSetupComplete ?: true
+                    AnimatedContent(
+                        targetState = isSetupReadyByValue,
+                        transitionSpec = {
+                            if (targetState == false) {
+                                // Transition to Setup
+                                fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(400))
                             } else {
-                                MainAppContent(playerViewModel, mainViewModel)
+                                // Transition from Setup to Main App
+                                scaleIn(initialScale = 0.95f, animationSpec = tween(450)) + fadeIn(animationSpec = tween(450)) togetherWith
+                                        slideOutHorizontally(targetOffsetX = { -it }, animationSpec = tween(450)) + fadeOut(animationSpec = tween(450))
                             }
+                        },
+                        label = "SetupTransition"
+                    ) { targetIsSetupComplete ->
+                        if (targetIsSetupComplete == false) {
+                            SetupScreen(onSetupComplete = {
+                                // Manual override or repository update logic
+                            })
+                        } else {
+                            MainAppContent(playerViewModel, mainViewModel)
                         }
                     }
-                    
+
                     // Show crash report dialog if needed
                     if (showCrashReportDialog && crashLogData != null) {
                         CrashReportDialog(
